@@ -1,0 +1,17 @@
+from __future__ import annotations
+
+from doc_auto.domain.file_types import (
+    ARCHIVE_EXTENSIONS,
+    HWP_EXTENSIONS,
+    IMAGE_EXTENSIONS,
+    PDF_EXTENSIONS,
+    SUPPORTED_INPUT_EXTENSIONS as SUPPORTED_EXTENSIONS,
+)
+
+UNKNOWN_DOCUMENT_TYPE = "미분류"
+
+DOCUMENT_TYPES = [
+    UNKNOWN_DOCUMENT_TYPE,
+]
+
+DOCUMENT_TYPE_CHOICES = [doc_type for doc_type in DOCUMENT_TYPES if doc_type != UNKNOWN_DOCUMENT_TYPE]

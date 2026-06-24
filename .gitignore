@@ -1,0 +1,59 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Pytest / Coverage
+.pytest_cache/
+.pytest_tmp/
+.coverage
+htmlcov/
+
+# Local data & environment
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# Project specific temporary / debug folders
+data/
+log/
+work/
+work_debug_roi/
+work_extract_temp/
+e2e_output.txt
+설계도.md
+
+# Debug / scratch files
+extract_logs.py
+scratch_users.txt
+기울임회전/
+
+# IDEs
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Build artifacts
+build/
+dist/
+release/
+src/*.egg-info/
+
+# Scratch files & folders
+scratch/
+
+# Samples
+samples/
+
+# Local sensitive configuration and logs
+settings.json
+src/doc_auto/services/diagnostics_local.py
+*.log
+

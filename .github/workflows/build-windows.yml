@@ -1,0 +1,151 @@
+name: Build Windows
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version from pyproject.toml"
+        required: true
+        default: "1.0"
+      recreate_release:
+        description: "Delete the existing release/tag for this version before publishing"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  build:
+    name: Test and build portable ZIP
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-lock.txt
+
+      - name: Install locked dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-lock.txt
+
+      - name: Verify version input
+        id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version || '1.0' }}
+        run: |
+          $projectVersion = python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
+          if ($projectVersion -ne $env:INPUT_VERSION) {
+            throw "Workflow version '$env:INPUT_VERSION' does not match pyproject.toml version '$projectVersion'."
+          }
+          "app_version=$projectVersion" >> $env:GITHUB_OUTPUT
+
+      - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+
+      - name: Build executable
+        run: python -m PyInstaller --clean -y OneStep-Windows.spec
+
+      - name: Package ZIP and SHA256
+        id: package
+        env:
+          APP_VERSION: ${{ steps.version.outputs.app_version }}
+        run: |
+          $distDir = "dist\OneStep_v$env:APP_VERSION"
+          $exePath = Join-Path $distDir "OneStep_v$env:APP_VERSION.exe"
+          if (!(Test-Path $exePath)) {
+            throw "Expected executable not found: $exePath"
+          }
+
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          $zipPath = "release\OneStep-Windows_v$env:APP_VERSION.zip"
+          if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+          }
+          Compress-Archive -Path $distDir -DestinationPath $zipPath -Force
+
+          $hash = (Get-FileHash $zipPath -Algorithm SHA256).Hash
+          $shaPath = "release\OneStep-Windows_v$env:APP_VERSION.sha256"
+          "$hash  OneStep-Windows_v$env:APP_VERSION.zip" | Set-Content -Path $shaPath -Encoding ascii
+
+          @"
+          ## Overview
+          Portable Windows build for fast local document and image cleanup.
+
+          ## Key Features
+          - Extract ZIP archives
+          - Split PDF pages into images
+          - Split multi-page TIFF files
+          - Convert HWP files to PDF when a local converter is available
+          - Rotate, crop, resize, and convert images
+          - Create PDF files from images
+
+          ## Privacy
+          OneStep runs locally on your PC and does not upload files to external servers.
+
+          ## Downloads
+          - `OneStep-Windows_v$env:APP_VERSION.zip`
+          - `OneStep-Windows_v$env:APP_VERSION.sha256`
+          "@ | Set-Content -Path release-notes.md -Encoding utf8
+
+          "zip_path=$zipPath" >> $env:GITHUB_OUTPUT
+          "sha_path=$shaPath" >> $env:GITHUB_OUTPUT
+          "sha256=$hash" >> $env:GITHUB_OUTPUT
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OneStep-Windows_v${{ steps.version.outputs.app_version }}
+          path: |
+            ${{ steps.package.outputs.zip_path }}
+            ${{ steps.package.outputs.sha_path }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ steps.version.outputs.app_version }}
+          RECREATE_RELEASE: ${{ github.event.inputs.recreate_release }}
+        run: |
+          $tag = "v$env:APP_VERSION"
+
+          if ($env:RECREATE_RELEASE -eq "true") {
+            gh release view $tag *> $null
+            if ($LASTEXITCODE -eq 0) {
+              gh release delete $tag --yes --cleanup-tag
+            }
+
+            git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
+            if ($LASTEXITCODE -eq 0) {
+              git push origin ":refs/tags/$tag"
+            }
+          }
+
+          gh release create $tag `
+            "${{ steps.package.outputs.zip_path }}#OneStep-Windows_v$env:APP_VERSION.zip" `
+            "${{ steps.package.outputs.sha_path }}#OneStep-Windows_v$env:APP_VERSION.sha256" `
+            --title "OneStep v$env:APP_VERSION" `
+            --notes-file release-notes.md `
+            --target "$env:GITHUB_SHA" `
+            --latest
